@@ -1,0 +1,303 @@
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<title>Instancing with TransformFeedback</title>
+    <script src="https://wgld.org/j/minMatrixb.js" type="text/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js" type="text/javascript"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sen:wght@700&display=swap" rel="stylesheet">
+    <script src="main.js" type="text/javascript"></script>
+
+    <script id="vs_transform" type="x-shader/x-vertex">#version 300 es
+      #define PI 3.1415926535
+
+      layout (location = 0) in vec4 position;
+      layout (location = 1) in vec3 velocity;
+
+      uniform float time;
+
+      out vec4 vPosition;
+      out vec3 vVelocity;
+
+      // snoise 4D
+
+      vec4 mod289(vec4 x) {
+        return x - floor(x * (1.0 / 289.0)) * 289.0; }
+
+      float mod289(float x) {
+        return x - floor(x * (1.0 / 289.0)) * 289.0; }
+
+      vec4 permute(vec4 x) {
+          return mod289(((x*34.0)+1.0)*x);
+      }
+
+      float permute(float x) {
+          return mod289(((x*34.0)+1.0)*x);
+      }
+
+      vec4 taylorInvSqrt(vec4 r)
+      {
+        return 1.79284291400159 - 0.85373472095314 * r;
+      }
+
+      float taylorInvSqrt(float r)
+      {
+        return 1.79284291400159 - 0.85373472095314 * r;
+      }
+
+      vec4 grad4(float j, vec4 ip)
+      {
+      const vec4 ones = vec4(1.0, 1.0, 1.0, -1.0);
+      vec4 p,s;
+
+      p.xyz = floor( fract (vec3(j) * ip.xyz) * 7.0) * ip.z - 1.0;
+      p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+      s = vec4(lessThan(p, vec4(0.0)));
+      p.xyz = p.xyz + (s.xyz*2.0 - 1.0) * s.www;
+
+      return p;
+      }
+
+      // (sqrt(5) - 1)/4 = F4, used once below
+      #define F4 0.309016994374947451
+
+      float snoise(vec4 v)
+      {
+      const vec4  C = vec4( 0.138196601125011,  // (5 - sqrt(5))/20  G4
+                            0.276393202250021,  // 2 * G4
+                            0.414589803375032,  // 3 * G4
+                          -0.447213595499958); // -1 + 4 * G4
+
+      // First corner
+      vec4 i  = floor(v + dot(v, vec4(F4)) );
+      vec4 x0 = v -   i + dot(i, C.xxxx);
+
+      // Other corners
+
+      // Rank sorting originally contributed by Bill Licea-Kane, AMD (formerly ATI)
+      vec4 i0;
+      vec3 isX = step( x0.yzw, x0.xxx );
+      vec3 isYZ = step( x0.zww, x0.yyz );
+      //  i0.x = dot( isX, vec3( 1.0 ) );
+      i0.x = isX.x + isX.y + isX.z;
+      i0.yzw = 1.0 - isX;
+      //  i0.y += dot( isYZ.xy, vec2( 1.0 ) );
+      i0.y += isYZ.x + isYZ.y;
+      i0.zw += 1.0 - isYZ.xy;
+      i0.z += isYZ.z;
+      i0.w += 1.0 - isYZ.z;
+
+      // i0 now contains the unique values 0,1,2,3 in each channel
+      vec4 i3 = clamp( i0, 0.0, 1.0 );
+      vec4 i2 = clamp( i0-1.0, 0.0, 1.0 );
+      vec4 i1 = clamp( i0-2.0, 0.0, 1.0 );
+
+      //  x0 = x0 - 0.0 + 0.0 * C.xxxx
+      //  x1 = x0 - i1  + 1.0 * C.xxxx
+      //  x2 = x0 - i2  + 2.0 * C.xxxx
+      //  x3 = x0 - i3  + 3.0 * C.xxxx
+      //  x4 = x0 - 1.0 + 4.0 * C.xxxx
+      vec4 x1 = x0 - i1 + C.xxxx;
+      vec4 x2 = x0 - i2 + C.yyyy;
+      vec4 x3 = x0 - i3 + C.zzzz;
+      vec4 x4 = x0 + C.wwww;
+
+      // Permutations
+      i = mod289(i);
+      float j0 = permute( permute( permute( permute(i.w) + i.z) + i.y) + i.x);
+      vec4 j1 = permute( permute( permute( permute (
+                i.w + vec4(i1.w, i2.w, i3.w, 1.0 ))
+              + i.z + vec4(i1.z, i2.z, i3.z, 1.0 ))
+              + i.y + vec4(i1.y, i2.y, i3.y, 1.0 ))
+              + i.x + vec4(i1.x, i2.x, i3.x, 1.0 ));
+
+      // Gradients: 7x7x6 points over a cube, mapped onto a 4-cross polytope
+      // 7*7*6 = 294, which is close to the ring size 17*17 = 289.
+      vec4 ip = vec4(1.0/294.0, 1.0/49.0, 1.0/7.0, 0.0) ;
+
+      vec4 p0 = grad4(j0,   ip);
+      vec4 p1 = grad4(j1.x, ip);
+      vec4 p2 = grad4(j1.y, ip);
+      vec4 p3 = grad4(j1.z, ip);
+      vec4 p4 = grad4(j1.w, ip);
+
+      // Normalize gradients
+      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+      p0 *= norm.x;
+      p1 *= norm.y;
+      p2 *= norm.z;
+      p3 *= norm.w;
+      p4 *= taylorInvSqrt(dot(p4,p4));
+
+      // Mix contributions from the five corners
+      vec3 m0 = max(0.6 - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), 0.0);
+      vec2 m1 = max(0.6 - vec2(dot(x3,x3), dot(x4,x4)            ), 0.0);
+      m0 = m0 * m0;
+      m1 = m1 * m1;
+      return 49.0 * ( dot(m0*m0, vec3( dot( p0, x0 ), dot( p1, x1 ), dot( p2, x2 )))
+                  + dot(m1*m1, vec2( dot( p3, x3 ), dot( p4, x4 ) ) ) ) ;
+
+      }
+
+      void main(void) {
+        float t = time * 0.05;
+        vec3 vel = velocity;
+        vec3 pos = position.xyz;
+        float life = position.w;
+        life -= 0.001;
+
+        if (life < 0.0) {
+          pos = vec3(0.0);
+          life = 1.0;
+        } 
+
+        pos += vel * 0.01;
+        
+        vel += 5.0 * vec3(
+          snoise(vec4(0.3 * pos, 7.255 + t)),
+          snoise(vec4(0.5 * pos, 3.553 + t)),
+          snoise(vec4(0.5 * pos, 1.259 + t))
+        );
+        vel -= pos * 0.3;
+        vel *= 0.75 + abs(sin(time) * 0.25);
+
+        vPosition = vec4(pos, life);
+        vVelocity = vel;
+      }
+    </script>
+
+    <script id="fs_transform" type="x-shader/x-fragment">#version 300 es
+      precision highp float;
+
+      out vec4 outColor;
+
+      void main(void){
+        outColor = vec4(1.0);
+      }
+    </script>
+
+    <script id="vs_main" type="x-shader/x-vertex">#version 300 es
+      #define PI 3.14159265358979
+      layout (location = 0) in vec3 position;
+      layout (location = 1) in vec3 normal;
+      layout (location = 2) in vec4 iPosition;
+      layout (location = 3) in vec3 iVelocity;
+
+      uniform mat4 mvpMatrix;
+      uniform float time;
+
+      out vec4 vPosition;
+      out vec3 vVelocity;
+      
+      void main(void){
+        float t = time * 0.01;
+        vec3 pos = position + iPosition.xyz;
+        vPosition = mvpMatrix * vec4(pos, 1.0);
+        vVelocity = iVelocity;
+        gl_Position = mvpMatrix * vec4(pos, 1.0);
+      }
+		</script>
+
+		<script id="fs_main" type="x-shader/x-fragment">#version 300 es
+      precision highp float;
+
+      in vec4 vPosition;
+      in vec3 vVelocity;
+
+      out vec4 outColor;
+
+      vec3 lightDirection = vec3(-0.577, 0.577, 0.577);
+
+      void main(void){
+        vec3 dx = dFdx(vPosition.xyz);
+        vec3 dy = dFdy(vPosition.xyz);
+        vec3 n = normalize(cross(normalize(dx), normalize(dy)));
+
+        vec3 light = normalize(lightDirection);
+        float diffuse = clamp(dot(n, light), 0.1, 1.0);
+        outColor = vec4(vec3(diffuse), 1.0);
+      }
+		</script>
+
+	</head>
+	<body>
+    <canvas id="canvas"></canvas>
+    <div id="container"></div>
+    <h1>Instancing with TransformFeedback</h1>
+    <div id="parameter_container">
+      <div class="parameter"><div class="parameter_name">Cube Size<span id="disp_cube_size" class="value"></span></div><input type="range" id="cube_size" min="1" max="15" value="5" step="0.1"/></div><br>
+      <div class="parameter"><div class="parameter_name">Instance Num<span id="disp_instance_num" class="value"></span></div><input type="range" id="instance_num" min="10000" max="1000000" value="100000" step="100"/></div><br>
+      <div class="parameter">
+        <div class="parameter_name">
+          <div>Background Colors</div>
+        </div>
+        R<input type="range" id="bg_color_r" min="0" max="255" value="17" step="1"/><br>
+        G<input type="range" id="bg_color_g" min="0" max="255" value="24" step="1"/><br>
+        B<input type="range" id="bg_color_b" min="0" max="255" value="30" step="1"/>
+      </div>
+    </div>
+  </body>
+</html>
+
+<style>
+#container {
+  padding-top: 50px;
+  position: fixed;
+}
+canvas {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: 0;
+  margin: auto;
+}
+#parameter_container {
+  width: calc(10% + 120px);
+  font-family: 'Sen';
+  font-size: calc(0.75vw + 11.35px);
+  color: white;
+  position: fixed;
+  display: block;
+  right: 50px;
+  transition: all 500ms;
+}
+.parameter_name {
+  width: 100%;
+  padding-bottom: 20px;
+}
+.parameter {
+  padding-top: 5px;
+}
+span {
+  float: right;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  outline: none;
+  background: rgba(255, 255, 255, 0.75);
+  height: 3px;
+  width: calc(100%);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance:none;
+    background:rgb(216, 148, 182);
+    height: 15px;
+    width: 15px;
+    border: 2px solid #494949;
+    border-radius: 50%;
+}
+h1 {
+  font-family: 'Sen';
+  font-size: calc(1vw + 25px);
+  left: 50px;
+  bottom: 10px;
+  position: fixed;
+  color: white;
+  transition: all 500ms;
+}
+::-webkit-scrollbar {
+  display: none;
+    }
+</style>
