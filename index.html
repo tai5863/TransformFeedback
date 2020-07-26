@@ -163,9 +163,9 @@
       vPosition = vec4(pos, life);
       vVelocity = vel;
     }
-  </script>
+    </script>
 
-  <script id="fs_transform" type="x-shader/x-fragment">#version 300 es
+    <script id="fs_transform" type="x-shader/x-fragment">#version 300 es
     precision highp float;
 
     out vec4 outColor;
@@ -205,13 +205,12 @@
 
     out vec4 outColor;
 
-    vec3 lightDirection = vec3(-0.577, 0.577, 0.577);
+    vec3 lightDirection = vec3(-5.0, 5.0, 5.0);
 
     void main(void){
       vec3 dx = dFdx(vPosition.xyz);
       vec3 dy = dFdy(vPosition.xyz);
       vec3 n = normalize(cross(normalize(dx), normalize(dy)));
-
       vec3 light = normalize(lightDirection);
       float diffuse = clamp(dot(n, light), 0.1, 1.0);
       outColor = vec4(vec3(diffuse), 1.0);
