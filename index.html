@@ -1,7 +1,7 @@
 <html>
 	<head>
 		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-		<title>Instancing with TransformFeedback</title>
+		<title>TransformFeedback</title>
     <script src="https://wgld.org/j/minMatrixb.js" type="text/javascript"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js" type="text/javascript"></script>
     <link href="https://fonts.googleapis.com/css2?family=Sen:wght@700&display=swap" rel="stylesheet">
@@ -13,10 +13,17 @@
     layout (location = 0) in vec4 position;
     layout (location = 1) in vec3 velocity;
 
-    uniform float time;
+    uniform float uTime;
+    uniform float uRange;
+    uniform float uLifeStep;
+    uniform float uAmplitude;
 
     out vec4 vPosition;
     out vec3 vVelocity;
+
+    float random (vec2 st) {
+      return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
 
     // snoise 4D
 
@@ -139,26 +146,24 @@
     }
 
     void main(void) {
-      float t = time * 0.05;
+      float t = uTime;
       vec3 vel = velocity;
       vec3 pos = position.xyz;
       float life = position.w;
-      life -= 0.001;
+      life -= uLifeStep;
 
       if (life < 0.0) {
-        pos = vec3(0.0);
+        pos = vec3(random(vec2(uTime)), random(vec2(0.0, uTime)), random(vec2(uTime, 0.0))) * uRange - uRange * 0.5;
         life = 1.0;
       } 
 
-      pos += vel * 0.01;
+      pos += vel * uAmplitude;
       
-      vel += 5.0 * vec3(
-        snoise(vec4(0.3 * pos, 7.255 + t)),
-        snoise(vec4(0.5 * pos, 3.553 + t)),
-        snoise(vec4(0.5 * pos, 1.259 + t))
+      vel += 0.05 * vec3(
+        snoise(vec4(0.3 * pos.xyz, 7.255 + t)),
+        snoise(vec4(0.4 * pos.yzx, 3.553 + t)),
+        snoise(vec4(0.5 * pos.zxy, 1.259 + t))
       );
-      vel -= pos * 0.3;
-      vel *= 0.75 + abs(sin(time) * 0.25);
 
       vPosition = vec4(pos, life);
       vVelocity = vel;
@@ -176,24 +181,19 @@
     </script>
 
     <script id="vs_main" type="x-shader/x-vertex">#version 300 es
-    #define PI 3.14159265358979
-    layout (location = 0) in vec3 position;
-    layout (location = 1) in vec3 normal;
-    layout (location = 2) in vec4 iPosition;
-    layout (location = 3) in vec3 iVelocity;
+    layout (location = 0) in vec4 iPosition;
+    layout (location = 1) in vec3 iVelocity;
 
     uniform mat4 mvpMatrix;
-    uniform float time;
 
     out vec4 vPosition;
     out vec3 vVelocity;
     
     void main(void){
-      float t = time * 0.01;
-      vec3 pos = position + iPosition.xyz;
-      vPosition = mvpMatrix * vec4(pos, 1.0);
+      vPosition = iPosition;
       vVelocity = iVelocity;
-      gl_Position = mvpMatrix * vec4(pos, 1.0);
+      gl_Position = mvpMatrix * vec4(iPosition.xyz, 1.0);
+      gl_PointSize = 1.0;
     }
 		</script>
 
@@ -203,17 +203,48 @@
     in vec4 vPosition;
     in vec3 vVelocity;
 
+    uniform bool isColor;
+
+    #define PI 3.1415926535
+
     out vec4 outColor;
 
-    vec3 lightDirection = vec3(-5.0, 5.0, 5.0);
+    float random (vec2 st) {
+      return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
 
-    void main(void){
-      vec3 dx = dFdx(vPosition.xyz);
-      vec3 dy = dFdy(vPosition.xyz);
-      vec3 n = normalize(cross(normalize(dx), normalize(dy)));
-      vec3 light = normalize(lightDirection);
-      float diffuse = clamp(dot(n, light), 0.1, 1.0);
-      outColor = vec4(vec3(diffuse), 1.0);
+    vec3 hsv2rgb(float h, float s, float v) {
+      h = mod(h, 360.0);
+      if (s == 0.0) {
+        return vec3(0.0, 0.0, 0.0);
+      }
+      float c = v * s;
+      float i = h / 60.0;
+      float x = c * (1.0 - abs(mod(i, 2.0) - 1.0));
+      return vec3(v - c) + (i < 1.0 ? vec3(c, x, 0.0) :
+      i < 2.0 ? vec3(x, c, 0.0) :
+      i < 3.0 ? vec3(0.0, c, x) :
+      i < 4.0 ? vec3(0.0, x, c) :
+      i < 5.0 ? vec3(x, 0.0, c) :
+      vec3(c, 0.0, x));
+    }
+
+    void main(void) {
+      float rad = atan(vVelocity.y, vVelocity.x) + PI;
+
+      float hue = 360.0 * rad / (2.0 * PI);
+      float brightness = min(1.0, length(vVelocity.xy) / 0.5);
+      vec3 hsv = hsv2rgb(hue, 1.0, brightness);
+      vec3 mono = vec3(random(vPosition.xy) * 0.3 + 0.7);
+      vec3 color = vec3(0.0);
+
+      if (isColor) {
+        color = hsv;
+      } else {
+        color = mono;
+      }
+      
+      outColor = vec4(color, 1.0);
     }
 		</script>
 
@@ -221,18 +252,13 @@
 	<body>
     <canvas id="canvas"></canvas>
     <div id="container"></div>
-    <h1>Instancing with TransformFeedback</h1>
+    <h1>TransformFeedback</h1>
     <div id="parameter_container">
-      <div class="parameter"><div class="parameter_name">Cube Size<span id="disp_cube_size" class="value"></span></div><input type="range" id="cube_size" min="1" max="15" value="5" step="0.1"/></div><br>
-      <div class="parameter"><div class="parameter_name">Instance Num<span id="disp_instance_num" class="value"></span></div><input type="range" id="instance_num" min="10000" max="1000000" value="100000" step="100"/></div><br>
-      <div class="parameter">
-        <div class="parameter_name">
-          <div>Background Colors</div>
-        </div>
-        R<input type="range" id="bg_color_r" min="0" max="255" value="17" step="1"/><br>
-        G<input type="range" id="bg_color_g" min="0" max="255" value="24" step="1"/><br>
-        B<input type="range" id="bg_color_b" min="0" max="255" value="30" step="1"/>
-      </div>
+      <div class="parameter"><div class="parameter_name">Color<input type="checkbox" id="color"/><span id="disp_color" class="value"></span></div></div><br>
+      <div class="parameter"><div class="parameter_name">Birth Range<span id="disp_birth_range" class="value"></span></div><input type="range" id="birth_range" min="1.0" max="15.0" value="15.0" step="0.1"/></div><br>
+      <div class="parameter"><div class="parameter_name">Point Num<span id="disp_point_num" class="value"></span></div><input type="range" id="point_num" min="10000" max="1000000" value="100000" step="10"/></div><br>
+      <div class="parameter"><div class="parameter_name">Life Step<span id="disp_life_step" class="value"></span></div><input type="range" id="life_step" min="0.001" max="0.01" value="0.01" step="0.00001"/></div><br>
+      <div class="parameter"><div class="parameter_name">Amplitude<span id="disp_amplitude" class="value"></span></div><input type="range" id="amplitude" min="0.001" max="0.01" value="0.01" step="0.001"/></div><br>
     </div>
   </body>
 </html>
@@ -251,9 +277,13 @@ canvas {
   margin: auto;
 }
 #parameter_container {
+  background: rgba(20, 20, 20, 0.95);
+  border-radius: 3%;
+  padding: 2% 2.5%;
   width: calc(10% + 120px);
   font-family: 'Sen';
   font-size: calc(0.75vw + 11.35px);
+  font-weight: 700;
   color: white;
   position: fixed;
   display: block;
@@ -262,7 +292,7 @@ canvas {
 }
 .parameter_name {
   width: 100%;
-  padding-bottom: 20px;
+  padding-bottom: 10px;
 }
 .parameter {
   padding-top: 5px;
@@ -275,13 +305,13 @@ input[type="range"] {
   appearance: none;
   cursor: pointer;
   outline: none;
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 1.0);
   height: 3px;
   width: calc(100%);
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance:none;
-    background:rgb(216, 148, 182);
+    background:rgba(0.0, 0.0, 0.0, 0.0);
     height: 15px;
     width: 15px;
     border: 2px solid #494949;
@@ -290,7 +320,8 @@ input[type="range"]::-webkit-slider-thumb {
 h1 {
   font-family: 'Sen';
   font-size: calc(1vw + 25px);
-  left: 50px;
+  font-weight: 700;
+  left: 100px;
   bottom: 10px;
   position: fixed;
   color: white;

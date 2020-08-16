@@ -22,17 +22,18 @@
       return;
     }
 
-    let cubeSize = document.getElementById('cube_size');
-    let dispCubeSize = document.getElementById('disp_cube_size');
-    let instNum = document.getElementById('instance_num');
-    let dispInstNum = document.getElementById('disp_instance_num');
-    let bgR = document.getElementById('bg_color_r');
-    let bgG = document.getElementById('bg_color_g');
-    let bgB = document.getElementById('bg_color_b');
+    let params = {
+      color: document.getElementById('color').checked,
+      pointNum: document.getElementById('point_num').value,
+      birthRange: document.getElementById('birth_range').value,
+      lifeStep: document.getElementById('life_step').value,
+      amplitude: document.getElementById('amplitude').value
+    }
 
     init();
 
     function init(){
+
       // transform feedback object
       let transformFeedback = gl.createTransformFeedback();
       gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
@@ -52,7 +53,10 @@
       attStride[1] = 3;
 
       let uniLocation = [];
-      uniLocation[0] = gl.getUniformLocation(prg, 'time');
+      uniLocation[0] = gl.getUniformLocation(prg, 'uTime');
+      uniLocation[1] = gl.getUniformLocation(prg, 'uRange');
+      uniLocation[2] = gl.getUniformLocation(prg, 'uLifeStep');
+      uniLocation[3] = gl.getUniformLocation(prg, 'uAmplitude');
 
       v_shader = create_shader('vs_main');
       f_shader = create_shader('fs_main');
@@ -73,49 +77,46 @@
 
       let fUniLocation = [];
       fUniLocation[0] = gl.getUniformLocation(fPrg, 'mvpMatrix');
+      fUniLocation[1] = gl.getUniformLocation(fPrg, 'isColor');
 
-      let cubeData = cube(0.03);
-      let cPosition = create_vbo(cubeData.p);
-      let cNormal = create_vbo(cubeData.n);
-      let cVBOList = [cPosition, cNormal];
-      let cIndex = create_ibo(cubeData.i);
+      let pointCount = 1000000;
 
-      let instanceCount = 1000000;
-
-      let instancePositions = [];
-      let instanceVelocities = [];
+      let pointPositions = [];
+      let pointVelocities = [];
       
-      let instanceFeedbackPositions = [];
-      let instanceFeedbackVelocities = [];
+      let pointFeedbackPositions = [];
+      let pointFeedbackVelocities = [];
 
       let offsetPosition = 4;
       let offsetVelocity = 3;
+
+      let range = params.birthRange;
       
-      for (let i = 0; i < instanceCount; i++) {
+      for (let i = 0; i < pointCount; i++) {
+
         // position
-        let range = 10.0;
-        let x = Math.random() * range - range / 2.0;
-        let y = Math.random() * range - range / 2.0;
-        let z = Math.random() * range - range / 2.0;
+        let x = Math.random() * range - range * 0.5;
+        let y = Math.random() * range - range * 0.5;
+        let z = Math.random() * range - range * 0.5;
         let w = Math.random();
-        instancePositions[i * offsetPosition] = x;
-        instancePositions[i * offsetPosition + 1] = y;
-        instancePositions[i * offsetPosition + 2] = z;
-        instancePositions[i * offsetPosition + 3] = w;
+        pointPositions[i * offsetPosition] = x;
+        pointPositions[i * offsetPosition + 1] = y;
+        pointPositions[i * offsetPosition + 2] = z;
+        pointPositions[i * offsetPosition + 3] = w;
 
         // velocity
-        instanceVelocities[i * offsetVelocity] = 0.0;
-        instanceVelocities[i * offsetVelocity + 1] = 0.0;
-        instanceVelocities[i * offsetVelocity + 2] = 0.0;
+        pointVelocities[i * offsetVelocity] = 0.0;
+        pointVelocities[i * offsetVelocity + 1] = 0.0;
+        pointVelocities[i * offsetVelocity + 2] = 0.0;
       }
 
-      instanceFeedbackPositions = new Float32Array(instanceCount * 4);
-      instanceFeedbackVelocities = new Float32Array(instanceCount * 3);
+      pointFeedbackPositions = new Float32Array(pointCount * 4);
+      pointFeedbackVelocities = new Float32Array(pointCount * 3);
 
-      let iPositionR = create_vbo(instancePositions);
-      let iVelocityR = create_vbo(instanceVelocities);
-      let iPositionW = create_vbo_feedback(instanceFeedbackPositions);
-      let iVelocityW = create_vbo_feedback(instanceFeedbackVelocities);
+      let iPositionR = create_vbo(pointPositions);
+      let iVelocityR = create_vbo(pointVelocities);
+      let iPositionW = create_vbo_feedback(pointFeedbackPositions);
+      let iVelocityW = create_vbo_feedback(pointFeedbackVelocities);
 
       const swapVBOs = function(){
         let tmpP = iPositionR;
@@ -140,7 +141,6 @@
       let startTime = Date.now();
       let nowTime = 0;
       let count = 0;
-      let cSize = 0;
       run = true;
 
       let stats = new Stats();
@@ -150,6 +150,14 @@
       render();
 
       function render(){
+
+        params = {
+          color: document.getElementById('color').checked,
+          pointNum: document.getElementById('point_num').value,
+          birthRange: document.getElementById('birth_range').value,
+          lifeStep: document.getElementById('life_step').value,
+          amplitude: document.getElementById('amplitude').value
+        }
 
         m.lookAt([0.0, 0.0, 15.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], vMatrix);
         m.perspective(100, c.width / c.height, 0.01, 1000.0, pMatrix);
@@ -161,22 +169,32 @@
 
         ++count;
 
-        cSize = cubeSize.value * 0.005;
-        dispCubeSize.innerHTML = Math.round((cSize * 10) * 100) / 100;
+        pointCount = params.pointNum;
+        range = params.birthRange;
 
-        instanceCount = instNum.value;
-        dispInstNum.innerHTML = instanceCount;
-
-        cubeData = cube(cSize);
-        cPosition = create_vbo(cubeData.p);
-        cNormal = create_vbo(cubeData.n);
-        cVBOList = [cPosition, cNormal];
-        cIndex = create_ibo(cubeData.i);
+        let eColor = document.getElementById('disp_color');
+        let ePointNum = document.getElementById('disp_point_num');
+        let eBirthRange = document.getElementById('disp_birth_range');
+        let eLifeStep = document.getElementById('disp_life_step');
+        let eAmplitude = document.getElementById('disp_amplitude');
+        
+        if (params.color) {
+          eColor.innerHTML = 'HSV'; 
+        } else {
+          eColor.innerHTML = 'Mono'; 
+        }
+        ePointNum.innerHTML = String(pointCount);
+        eBirthRange.innerHTML = String(params.birthRange);
+        eLifeStep.innerHTML = String(params.lifeStep);
+        eAmplitude.innerHTML = String(params.amplitude);
 
         gl.useProgram(prg);
 
         // uniform
         gl.uniform1f(uniLocation[0], nowTime);
+        gl.uniform1f(uniLocation[1], range);
+        gl.uniform1f(uniLocation[2], params.lifeStep);
+        gl.uniform1f(uniLocation[3], params.amplitude);
 
         // bind buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, iPositionR);
@@ -193,7 +211,7 @@
         gl.enable(gl.RASTERIZER_DISCARD);
         gl.beginTransformFeedback(gl.POINTS);
 
-        gl.drawArrays(gl.POINTS, 0, instanceCount);
+        gl.drawArrays(gl.POINTS, 0, pointCount);
 
         gl.disable(gl.RASTERIZER_DISCARD);
         gl.endTransformFeedback();
@@ -203,10 +221,8 @@
         // swap
         swapVBOs();
 
-        let bColor = [bgR.value, bgG.value, bgB.value];
-        bColor = normalizeColor(bColor);
         // clear
-        gl.clearColor(bColor[0], bColor[1], bColor[2], 1.0);
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
         gl.clearDepth(1.0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.viewport(0, 0, c.width, c.height);
@@ -214,9 +230,6 @@
         gl.useProgram(fPrg);
 
         // bind buffer
-        set_attribute(cVBOList, fAttLocation, fAttStride);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cIndex);
-
         gl.bindBuffer(gl.ARRAY_BUFFER, iPositionR);
         gl.enableVertexAttribArray(fAttLocation[2]);
         gl.vertexAttribPointer(fAttLocation[2], fAttStride[2], gl.FLOAT, false, 0, 0);
@@ -233,8 +246,9 @@
 
         // uniform
         gl.uniformMatrix4fv(fUniLocation[0], false, mvpMatrix);
+        gl.uniform1i(fUniLocation[1], params.color);
 
-        gl.drawElementsInstanced(gl.TRIANGLES, cubeData.i.length, gl.UNSIGNED_SHORT, 0, instanceCount);
+        gl.drawArrays(gl.POINTS, 0, pointCount);
 
         gl.flush();
 
@@ -244,52 +258,6 @@
   }, false);
 
   // src: https://wgld.org/
-
-  function cube(side, color){
-    let hs = side * 0.5;
-    let pos = [
-      -hs, -hs,  hs,  hs, -hs,  hs,  hs,  hs,  hs, -hs,  hs,  hs,
-      -hs, -hs, -hs, -hs,  hs, -hs,  hs,  hs, -hs,  hs, -hs, -hs,
-      -hs,  hs, -hs, -hs,  hs,  hs,  hs,  hs,  hs,  hs,  hs, -hs,
-      -hs, -hs, -hs,  hs, -hs, -hs,  hs, -hs,  hs, -hs, -hs,  hs,
-       hs, -hs, -hs,  hs,  hs, -hs,  hs,  hs,  hs,  hs, -hs,  hs,
-      -hs, -hs, -hs, -hs, -hs,  hs, -hs,  hs,  hs, -hs,  hs, -hs
-    ];
-    let nor = [
-      -1.0, -1.0,  1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0, -1.0,  1.0,  1.0,
-      -1.0, -1.0, -1.0, -1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0, -1.0, -1.0,
-      -1.0,  1.0, -1.0, -1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0, -1.0,
-      -1.0, -1.0, -1.0,  1.0, -1.0, -1.0,  1.0, -1.0,  1.0, -1.0, -1.0,  1.0,
-       1.0, -1.0, -1.0,  1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0, -1.0,  1.0,
-      -1.0, -1.0, -1.0, -1.0, -1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0, -1.0
-    ];
-    let col = new Array();
-    for(var i = 0; i < pos.length / 3; i++){
-      if(color){
-        var tc = color;
-      }else{
-        tc = hsva(360 / pos.length / 3 * i, 1, 1, 1);
-      }
-      col.push(tc[0], tc[1], tc[2], tc[3]);
-    }
-    let st = [
-      0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-      0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-      0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-      0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-      0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
-      0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0
-    ];
-    let idx = [
-       0,  1,  2,  0,  2,  3,
-       4,  5,  6,  4,  6,  7,
-       8,  9, 10,  8, 10, 11,
-      12, 13, 14, 12, 14, 15,
-      16, 17, 18, 16, 18, 19,
-      20, 21, 22, 20, 22, 23
-    ];
-    return {p : pos, n : nor, c : col, t : st, i : idx};
-  }
 
 	function create_shader(id){
     let shader;
